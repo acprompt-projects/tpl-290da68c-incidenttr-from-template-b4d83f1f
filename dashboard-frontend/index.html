@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Incident Triage Dashboard</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0f1117;color:#e1e4e8}
+.app{max-width:1200px;margin:0 auto;padding:20px}
+h1{font-size:1.5rem;margin-bottom:4px;color:#f0f6fc}
+.subtitle{font-size:.85rem;color:#8b949e;margin-bottom:20px}
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:6px 14px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#c9d1d9;cursor:pointer;font-size:.8rem;transition:all .15s}
+.filter-btn:hover{border-color:#58a6ff}
+.filter-btn.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.severity-critical{color:#f85149}.severity-high{color:#f0883e}.severity-medium{color:#d29922}.severity-low{color:#3fb950}.severity-info{color:#58a6ff}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:600;text-transform:uppercase}
+.badge-critical{background:#f8514922;color:#f85149}.badge-high{background:#f0883e22;color:#f0883e}.badge-medium{background:#d2992222;color:#d29922}.badge-low{background:#3fb95022;color:#3fb950}.badge-info{background:#58a6ff22;color:#58a6ff}
+.badge-open{background:#f8514922;color:#f85149}.badge-investigating{background:#d2992222;color:#d29922}.badge-resolved{background:#3fb95022;color:#3fb950}.badge-muted{background:#8b949e22;color:#8b949e}
+table{width:100%;border-collapse:collapse;background:#161b22;border-radius:8px;overflow:hidden;border:1px solid #30363d}
+thead th{text-align:left;padding:10px 12px;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:#8b949e;border-bottom:1px solid #30363d;cursor:pointer;user-select:none}
+thead th:hover{color:#c9d1d9}
+tbody tr{border-bottom:1px solid #21262d;cursor:pointer;transition:background .1s}
+tbody tr:hover{background:#1c2128}
+tbody tr:last-child{border-bottom:none}
+tbody td{padding:10px 12px;font-size:.82rem}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;width:560px;max-width:90vw;max-height:85vh;overflow-y:auto}
+.modal h2{font-size:1.15rem;margin-bottom:4px}
+.modal .meta{font-size:.78rem;color:#8b949e;margin-bottom:16px}
+.modal label{display:block;font-size:.78rem;color:#8b949e;margin:12px 0 4px}
+.modal select,.modal textarea{width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:.82rem}
+.modal textarea{min-height:60px;resize:vertical}
+.modal .actions{display:flex;gap:8px;margin-top:16px}
+.btn{padding:8px 16px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:.82rem}
+.btn-primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.btn-primary:hover{background:#388bfd}
+.detail-row{display:flex;gap:8px;margin-bottom:6px;font-size:.82rem}
+.detail-row .dk{color:#8b949e;min-width:100px}
+.count{font-size:.75rem;color:#8b949e;margin-left:auto}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const API = window.INCIDENT_API || "http://localhost:8000";
+
+const SEVERITIES = ["critical","high","medium","low","info"];
+const STATUSES = ["open","investigating","resolved","muted"];
+const sevOrder = (s) => SEVERITIES.indexOf(s);
+
+function useIncidents() {
+  const [incidents, setIncidents] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const fetchIncidents = async () => {
+    try {
+      const res = await fetch(`${API}/incidents`);
+      if (res.ok) setIncidents(await res.json());
+    } catch {}
+    setLoading(false);
+  };
+  React.useEffect(() => { fetchIncidents(); const id = setInterval(fetchIncidents, 15000); return () => clearInterval(id); }, []);
+  return { incidents, loading, refresh: fetchIncidents };
+}
+
+function IncidentTable({ incidents, onRowClick, sortCol, sortDir, onSort }) {
+  const sorted = [...incidents].sort((a, b) => {
+    let va, vb;
+    if (sortCol === "severity") { va = sevOrder(a.severity); vb = sevOrder(b.severity); }
+    else if (sortCol === "created_at") { va = a.created_at; vb = b.created_at; }
+    else { va = (a[sortCol] || "").toString(); vb = (b[sortCol] || "").toString(); }
+    return (va < vb ? -1 : va > vb ? 1 : 0) * (sortDir === "asc" ? 1 : -1);
+  });
+  const arrow = (col) => sortCol === col ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+  return (
+    <table>
+      <thead><tr>
+        <th onClick={() => onSort("severity")}>Severity{arrow("severity")}</th>
+        <th onClick={() => onSort("title")}>Title{arrow("title")}</th>
+        <th onClick={() => onSort("status")}>Status{arrow("status")}</th>
+        <th onClick={() => onSort("created_at")}>Created{arrow("created_at")}</th>
+        <th>Alerts</th>
+        <th>Services</th>
+      </tr></thead>
+      <tbody>
+        {sorted.map((inc) => (
+          <tr key={inc.id} onClick={() => onRowClick(inc)}>
+            <td><span className={`badge badge-${inc.severity}`}>{inc.severity}</span></td>
+            <td>{inc.title}</td>
+            <td><span className={`badge badge-${inc.status}`}>{inc.status}</span></td>
+            <td>{new Date(inc.created_at).toLocaleString()}</td>
+            <td>{inc.alert_count ?? inc.alert_ids?.length ?? 0}</td>
+            <td>{(inc.affected_services || []).join(", ")}</td>
+          </tr>
+        ))}
+        {sorted.length === 0 && <tr><td colSpan={6} style={{textAlign:"center",padding:24,color:"#8b949e"}}>No incidents match filters</td></tr>}
+      </tbody>
+    </table>
+  );
+}
+
+function DetailModal({ incident, onClose, onUpdated }) {
+  const [status, setStatus] = React.useState(incident.status);
+  const [severity, setSeverity] = React.useState(incident.severity);
+  const [notes, setNotes] = React.useState(incident.notes || "");
+  const [saving, setSaving] = React.useState(false);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/incidents/${incident.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, severity, notes })
+      });
+      if (res.ok) { onUpdated(); onClose(); }
+    } catch {}
+    setSaving(false);
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>{incident.title}</h2>
+        <div className="meta">ID: {incident.id} · Created: {new Date(incident.created_at).toLocaleString()}</div>
+        <div className="detail-row"><span className="dk">Severity:</span><span className={`severity-${incident.severity}`}>{incident.severity}</span></div>
+        <div className="detail-row"><span className="dk">Status:</span>{incident.status}</div>
+        <div className="detail-row"><span className="dk">Alerts:</span>{incident.alert_ids?.join(", ") || "none"}</div>
+        <div className="detail-row"><span className="dk">Services:</span>{(incident.affected_services || []).join(", ") || "none"}</div>
+        {incident.description && <div style={{marginTop:8,fontSize:".82rem",color:"#c9d1d9"}}>{incident.description}</div>}
+        <label>Status</label>
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <label>Severity</label>
+        <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+          {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <label>Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <div className="actions">
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const { incidents, loading, refresh } = useIncidents();
+  const [sevFilter, setSevFilter] = React.useState("all");
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [selected, setSelected] = React.useState(null);
+  const [sortCol, setSortCol] = React.useState("severity");
+  const [sortDir, setSortDir] = React.useState("asc");
+  const onSort = (col) => { if (sortCol === col) setSortDir(sortDir === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("asc"); } };
+  const filtered = incidents.filter((i) => (sevFilter === "all" || i.severity === sevFilter) && (statusFilter === "all" || i.status === statusFilter));
+  const counts = { all: incidents.length };
+  SEVERITIES.forEach((s) => { counts[s] = incidents.filter((i) => i.severity === s).length; });
+  return (
+    <div className="app">
+      <h1>Incident Triage Dashboard</h1>
+      <p className="subtitle">{loading ? "Loading…" : `${incidents.length} incidents · Auto-refresh 15s`}</p>
+      <div className="filters">
+        <span style={{fontSize:".78rem",color:"#8b949e",marginRight:4}}>Severity:</span>
+        <button className={`filter-btn ${sevFilter==="all"?"active":""}`} onClick={() => setSevFilter("all")}>All ({counts.all})</button>
+        {SEVERITIES.map((s) => <button key={s} className={`filter-btn ${sevFilter===s?"active":""} severity-${s}`} onClick={() => setSevFilter(s)}>{s} ({counts[s]})</button>)}
+        <span style={{fontSize:".78rem",color:"#8b949e",marginLeft:12,marginRight:4}}>Status:</span>
+        <button className={`filter-btn ${statusFilter==="all"?"active":""}`} onClick={() => setStatusFilter("all")}>All</button>
+        {STATUSES.map((s) => <button key={s} className={`filter-btn ${statusFilter===s?"active":""}`} onClick={() => setStatusFilter(s)}>{s}</button>)}
+      </div>
+      <IncidentTable incidents={filtered} onRowClick={setSelected} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+      {selected && <DetailModal incident={selected} onClose={() => setSelected(null)} onUpdated={refresh} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
